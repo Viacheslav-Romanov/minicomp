@@ -1,0 +1,5 @@
+/target
+*.asm
+hello
+hello2
+miniout.elf
