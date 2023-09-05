@@ -21,6 +21,7 @@ jobs:
     - name: Run tests
       run: |
         ./target/debug/minicomp miniout.elf "avg(x, y) = (x + y)/2; quad(x, a, b, c) = a*x*x + b*x + c"
+        chmod +x miniout.elf
         ./miniout.elf
         objdump -M intel -d miniout.elf
       
