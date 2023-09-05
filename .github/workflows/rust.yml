@@ -1,0 +1,26 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: cargo build
+    - name: Run tests
+      run: |
+        ./target/debug/minicomp miniout.elf "avg(x, y) = (x + y)/2; quad(x, a, b, c) = a*x*x + b*x + c"
+        ./miniout.elf
+        objdump -M intel -d miniout.elf
+      
