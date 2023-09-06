@@ -194,30 +194,52 @@ fn combine(tree: &ParseNode) -> Vec<u8> {
         GrammarItem::Sum => {
             let mut lhs = combine(tree.children.get(0).expect("sums need two children"));
             let mut rhs = combine(tree.children.get(1).expect("sums need two children"));
-            let mut v = b"\x48\x01\xc8".to_vec();
+            let mut v = Vec::new();
             v.append(&mut lhs);
             v.append(&mut rhs);
+            v.append(&mut b"\x48\x01\xc8".to_vec());
+            v.append(&mut b"\x50".to_vec());
             v
         }
         GrammarItem::Product => {
             let mut lhs = combine(tree.children.get(0).expect("products need two children"));
             let mut rhs = combine(tree.children.get(1).expect("products need two children"));
-            let mut v = b"\x48\xf7\xe1".to_vec();
+            let mut v = Vec::new();
             v.append(&mut lhs);
             v.append(&mut rhs);
+            v.append(&mut b"\x48\xf7\xe1".to_vec());
             v
         }
         GrammarItem::Div => {
             let mut lhs = combine(tree.children.get(0).expect("divider need two children"));
             let mut rhs = combine(tree.children.get(1).expect("divider need two children"));
-            let mut v = b"\x48\xf7\xe1".to_vec();
+            let mut v = Vec::new();
             v.append(&mut lhs);
             v.append(&mut rhs);
+            let arg_from_stack = lhs.is_empty() || rhs.is_empty();
+            if arg_from_stack {
+                v.append(&mut b"\x48\x8b\x04\x24".to_vec());
+            }
+            v.append(&mut b"\x48\xf7\xf1".to_vec());
+            if arg_from_stack {
+                v.append(&mut b"\x5a".to_vec());
+            }
             v
         }
-        GrammarItem::Number(n) => n.to_le_bytes().to_vec(),
-        GrammarItem::Arg(n) => b"".to_vec(),
-    }    
+        GrammarItem::Number(n) => {
+            let mut v = b"\xb9".to_vec();
+            v.append(&mut (n as u32).to_le_bytes().to_vec());
+            v
+        },
+        GrammarItem::Arg(n) => {
+            let v = match n {
+                'x' => b"\x48\x8b\x45\x24",
+                'y' => b"\x48\x8b\x4d\x16",
+                _ => b"\x48\x8b\x4d\x16",
+            };
+            v.to_vec()
+        },
+    }
 }
 
 fn equation_to_code(eq: &Equation) -> Vec<u8> {
@@ -226,10 +248,10 @@ fn equation_to_code(eq: &Equation) -> Vec<u8> {
     res.append(&mut b"\x55".to_vec());
     res.append(&mut b"\x48\x89\xe5".to_vec());
 
-    res = combine(&eq.tree);
+    res.append(&mut combine(&eq.tree));
 
     res.append(&mut b"\xc3".to_vec());
-    println!("{:?}", res);
+    // println!("{:?}", res);
 
     res
 
