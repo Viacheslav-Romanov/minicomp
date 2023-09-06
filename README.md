@@ -1,3 +1,5 @@
+![minicomp](https://github.com/Viacheslav-Romanov/minicomp/actions/workflows/rust.yml/badge.svg)
+
 &nbsp;&nbsp;&nbsp;&nbsp;Write a program in Rust that takes a series of mathematical function definitions (using the common operations + - / *) as a command line argument, and turns them into machine code that operates on integers and computes the specified functions.
 
 &nbsp;&nbsp;&nbsp;&nbsp;The program must output a ELF binary containing machine code targeting the computer architecture of your choice (e.g. ARM, RISC-V, x86, ...) 
