@@ -5,11 +5,16 @@ use crate::minimal_elf::*;
 pub struct Equation {
     function_name: String,
     tree: ParseNode,
-    number_of_arguments: usize,
+    arguments: Vec<char>,
 }
 
 pub fn generate_code_section(equations: &Vec<Equation>) -> Vec<u8> {
-    let res = equation_to_code(equations.get(0).expect("Supposed one to be returned"));
+    let mut res = Vec::new();
+    for eq in equations {
+        // equation_to_code(equations.get(0).expect("Supposed one to be returned"));
+        res.append(&mut equation_to_code(eq));
+    }
+    
     res
 }
 
@@ -171,59 +176,116 @@ pub fn parse_input_formula(input: &String) -> Vec<Equation> {
                                 .collect::<String>();
         let start_pos = arr[0].find('(').unwrap();
         let end_pos = arr[0].find(')').unwrap();
-        let number_of_arguments = &arr[0][start_pos + 1..end_pos]
-                                                    .split(',')
-                                                    .collect::<Vec<_>>()
-                                                    .len();
+        let arguments = &arr[0][start_pos + 1..end_pos]
+                                                    .split(',').map(|c| c.trim().chars().next().unwrap())
+                                                    .collect::<Vec<char>>();
         let equation = arr[1];
         let f = parse(&equation.to_owned());
         // println!("{}", formula_parser::print(&f.unwrap()));
         let tree = &f.unwrap();
-        equations.push(Equation {function_name: function_name, tree: tree.clone(), number_of_arguments: *number_of_arguments});
+        equations.push(Equation {function_name: function_name, tree: tree.clone(), arguments: arguments.clone()});
         // println!("{:?}", tree);
     }
 
     equations
 }
 
-fn combine(tree: &ParseNode) -> Vec<u8> {
+fn get_arguments(tree: &ParseNode) -> (&GrammarItem, &GrammarItem) {
+    let lhs_type = &tree.children.get(0).unwrap().entry;
+    let rhs_type = &tree.children.get(1).unwrap().entry;
+    (lhs_type, rhs_type)
+}
+
+fn set_arguments_to_different_regs(tree: &ParseNode, rhs: &Vec<u8>, lhs: &Vec<u8>) -> (Vec<u8>, Vec<u8>) {
+    let res = match get_arguments(&tree) {
+        (GrammarItem::Arg(_), GrammarItem::Arg(_)) => {
+            let mut r = Vec::new();
+            r.append(&mut b"\x48\x8b\x45".to_vec());
+            r.append(&mut rhs.clone());
+            let mut l = Vec::new();
+            l.append(&mut b"\x48\x8b\x4d".to_vec());
+            l.append(&mut lhs.clone());
+            (r, l)
+        },
+        (_, GrammarItem::Arg(_)) => {
+            let mut r = Vec::new();
+            r.append(&mut b"\x48\x8b\x45".to_vec());
+            r.append(&mut rhs.clone());
+            (lhs.clone(), r)
+        },
+        (GrammarItem::Arg(_), _) => {
+            let mut l = Vec::new();
+            l.append(&mut b"\x48\x8b\x45".to_vec());
+            l.append(&mut lhs.clone());
+            (l, rhs.clone())
+        },
+        _ => (rhs.clone(), lhs.clone())
+    };
+    res
+}
+
+fn combine(tree: &ParseNode, args: &Vec<char>) -> Vec<u8> {
     match tree.entry {
         GrammarItem::Paren => {
-            combine(tree.children.get(0).expect("parens need one child"))
+            combine(tree.children.get(0).expect("parens need one child"), args)
         }
         GrammarItem::Sum => {
-            let mut lhs = combine(tree.children.get(0).expect("sums need two children"));
-            let mut rhs = combine(tree.children.get(1).expect("sums need two children"));
+            let mut lhs = combine(tree.children.get(0).expect("sums need two children"), args);
+            let mut rhs = combine(tree.children.get(1).expect("sums need two children"), args);
+            let both_sides_operators= match get_arguments(&tree) {
+                (_ , GrammarItem::Arg(_) | GrammarItem::Number(_))
+                | (GrammarItem::Arg(_) | GrammarItem::Number(_) , _)  => false,
+                _ => true
+            };
+            // println!("Product_Type: lhs_type={:#04x?} rhs_type={:#04x?}", lhs_type, rhs_type);
             let mut v = Vec::new();
+            if rhs[..3] == lhs[..3] {
+                rhs[2] = 0x45; //change register to rcx
+            }
+            // (rhs, lhs) = set_arguments_to_different_regs(tree, &rhs, &lhs);
             v.append(&mut lhs);
             v.append(&mut rhs);
+            if both_sides_operators {
+                v.append(&mut b"\x59".to_vec());
+            }
             v.append(&mut b"\x48\x01\xc8".to_vec());
-            v.append(&mut b"\x50".to_vec());
+            // v.append(&mut b"\x50".to_vec());
             v
         }
         GrammarItem::Product => {
-            let mut lhs = combine(tree.children.get(0).expect("products need two children"));
-            let mut rhs = combine(tree.children.get(1).expect("products need two children"));
+            let mut lhs = combine(tree.children.get(0).expect("products need two children"), args);
+            let mut rhs = combine(tree.children.get(1).expect("products need two children"), args);
+            let one_side_operator= match get_arguments(&tree) {
+                (GrammarItem::Arg(_) | GrammarItem::Number(_), GrammarItem::Arg(_) | GrammarItem::Number(_)) => false,
+                _ => true
+            };
+            // println!("Product_Type: lhs_type={:#04x?} rhs_type={:#04x?}", lhs_type, rhs_type);
             let mut v = Vec::new();
-            v.append(&mut lhs);
+            // (rhs, lhs) = set_arguments_to_different_regs(tree, &rhs, &lhs);
+            if rhs[..3] == lhs[..3] {
+                rhs[2] = 0x45;
+            }
+            // println!("Product: lhs={:#04x?} rhs={:#04x?}", lhs, rhs);
             v.append(&mut rhs);
+            v.append(&mut lhs);
+            // v.append(&mut b"\x48\x8b\x04\x24".to_vec()); //if
             v.append(&mut b"\x48\xf7\xe1".to_vec());
+            if one_side_operator {
+                v.append(&mut b"\x50".to_vec()); //if
+            }
             v
         }
         GrammarItem::Div => {
-            let mut lhs = combine(tree.children.get(0).expect("divider need two children"));
-            let mut rhs = combine(tree.children.get(1).expect("divider need two children"));
+            let mut lhs = combine(tree.children.get(0).expect("divider need two children"), args);
+            let mut rhs = combine(tree.children.get(1).expect("divider need two children"), args);
             let mut v = Vec::new();
+            if rhs[..3] == lhs[..3] {
+                rhs[2] = 0x45;
+            }
+            // (rhs, lhs) = set_arguments_to_different_regs(tree, &rhs, &lhs);
             v.append(&mut lhs);
             v.append(&mut rhs);
-            let arg_from_stack = lhs.is_empty() || rhs.is_empty();
-            if arg_from_stack {
-                v.append(&mut b"\x48\x8b\x04\x24".to_vec());
-            }
             v.append(&mut b"\x48\xf7\xf1".to_vec());
-            if arg_from_stack {
-                v.append(&mut b"\x5a".to_vec());
-            }
             v
         }
         GrammarItem::Number(n) => {
@@ -232,12 +294,13 @@ fn combine(tree: &ParseNode) -> Vec<u8> {
             v
         },
         GrammarItem::Arg(n) => {
-            let v = match n {
-                'x' => b"\x48\x8b\x45\x24",
-                'y' => b"\x48\x8b\x4d\x16",
-                _ => b"\x48\x8b\x4d\x16",
-            };
-            v.to_vec()
+            let offset = (args.iter()
+                                    .position(|&x| x == n)
+                                    .unwrap())*8 + 0x10;
+            let mut v = b"\x48\x8b\x4d".to_vec();
+            v.append(&mut [offset as u8].to_vec()); 
+            v
+            // [offset as u8].to_vec()
         },
     }
 }
@@ -248,7 +311,7 @@ fn equation_to_code(eq: &Equation) -> Vec<u8> {
     res.append(&mut b"\x55".to_vec());
     res.append(&mut b"\x48\x89\xe5".to_vec());
 
-    res.append(&mut combine(&eq.tree));
+    res.append(&mut combine(&eq.tree, &eq.arguments));
 
     res.append(&mut b"\xc3".to_vec());
     // println!("{:?}", res);
