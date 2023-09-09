@@ -11,7 +11,6 @@ pub struct Equation {
 pub fn generate_code_section(equations: &Vec<Equation>) -> Vec<u8> {
     let mut res = Vec::new();
     for eq in equations {
-        // equation_to_code(equations.get(0).expect("Supposed one to be returned"));
         res.append(&mut equation_to_code(eq));
     }
     
@@ -23,18 +22,30 @@ pub fn assemble_binary(equations: &Vec<Equation>) -> Vec<u8> {
 
     assembly.append(&mut assemble_elf_header(0x138));
     assembly.append(&mut assemble_program_header(0x179));
-    assembly.append(&mut assemble_section_header(0x188, 0x179));
+    assembly.append(&mut assemble_section_header(0x188, 0x179, 0));
+    assembly.append(&mut assemble_symtab_section_header(0, 0));
+    assembly.append(&mut assemble_strtab_section_header(0, 0));
     assembly.append(&mut generate_code_section(&equations));
 
     let entry_point_offset = assembly.len() as u64;
 
     assembly.append(&mut entry_point_code(0x281a0));
+
     let message_buffer_offset = assembly.len() as u64;
+
     assembly.append(&mut message_buffer());
 
     let string_table_offset = assembly.len() as u64;
 
     assembly.append(&mut assemble_string_table());
+
+    let symtab_table_offset = assembly.len() as u64;
+
+    assembly.append(&mut assemble_symtab_table(0, 10, 20));
+
+    let strtab_table_offset = assembly.len() as u64;
+
+    assembly.append(&mut assemble_strtab_table());
 
     let file_size = assembly.len() as u64;
 
@@ -43,11 +54,15 @@ pub fn assemble_binary(equations: &Vec<Equation>) -> Vec<u8> {
     // need a second pass here to update the binary with calculated values
     assembly.append(&mut assemble_elf_header(entry_point_offset));
     assembly.append(&mut assemble_program_header(string_table_offset));
-    assembly.append(&mut assemble_section_header(file_size, string_table_offset));
+    assembly.append(&mut assemble_section_header(file_size, string_table_offset, symtab_table_offset - string_table_offset));
+    assembly.append(&mut assemble_symtab_section_header(symtab_table_offset, strtab_table_offset - symtab_table_offset));
+    assembly.append(&mut assemble_strtab_section_header(strtab_table_offset, file_size - strtab_table_offset));
     assembly.append(&mut generate_code_section(&equations));
     assembly.append(&mut entry_point_code(FILE_LOAD_VA + message_buffer_offset));
     assembly.append(&mut message_buffer());
     assembly.append(&mut assemble_string_table());
+    assembly.append(&mut assemble_symtab_table(entry_point_offset, entry_point_offset - 0x48, entry_point_offset - 0x2f));
+    assembly.append(&mut assemble_strtab_table());
     assembly
 }
 
@@ -70,7 +85,7 @@ pub fn assemble_elf_header(entry_point_offset: u64) -> Vec<u8> {
         size_of_program_header_entry: 0x38,
         number_of_program_header_entries: 1,
         size_of_section_header_entry: 0x40,
-        number_of_section_header_entries: 3,
+        number_of_section_header_entries: 5,
         index_of_string_table: 2,    
     };
 
@@ -94,7 +109,7 @@ pub fn assemble_program_header(segment_size: u64) -> Vec<u8> {
     res
 }
 
-pub fn assemble_section_header(file_size: u64, string_table_offset: u64) -> Vec<u8> {
+pub fn assemble_section_header(file_size: u64, string_table_offset: u64, string_table_size: u64) -> Vec<u8> {
     let sh = SectionsHeader {
         null_section_header_1: "\x00".repeat(32).as_bytes().try_into().unwrap(),
         null_section_header_2: "\x00".repeat(32).as_bytes().try_into().unwrap(),
@@ -106,14 +121,14 @@ pub fn assemble_section_header(file_size: u64, string_table_offset: u64) -> Vec<
         size_of_section: file_size, //calculate file_end
         linked_section_index: 0,
         info: 0,
-        aligment: 16,
+        aligment: 0,
         entry_size: 0,
         string_table: 7, //calculate string_table_name - string_table
         string_table_index: 3,
         loadable: 0,
         string_table_address: FILE_LOAD_VA + string_table_offset, //calculate file_load_va + string_table
         string_table_offset: string_table_offset, //calculate string_table
-        string_table_size: 0x11, //calculate string_table_end - string_table
+        string_table_size: string_table_size, //calculate string_table_end - string_table
         reserved1: 0,
         reserved2: 0,
         reserved3: 1,
@@ -124,28 +139,93 @@ pub fn assemble_section_header(file_size: u64, string_table_offset: u64) -> Vec<
     res
 }
 
-pub fn assemble_string_table() -> Vec<u8> {
-    let st = StringTable {
-        empty_string: 0,
-        text_section_name: ".text\x00".as_bytes().try_into().unwrap(),
-        string_table_name: ".shstrtab\x00".to_string().as_bytes().try_into().unwrap(),
+pub fn assemble_symtab_section_header(symtab_offset: u64, symtab_table_size: u64) -> Vec<u8> {
+    let sh = SectionHeader {
+        name: 17, // address of the .symtab text 
+        bits: 2,
+        flags: 0,
+        addr: 0,
+        offset: symtab_offset,
+        size: symtab_table_size,
+        link: 4,
+        info: 0,
+        addralign: 0,
+        entsize: 0x18,
     };
 
-    let res = encode(&st);
+    let res = encode(&sh);
     res
+}
+
+pub fn assemble_strtab_section_header(strtab_offset: u64, strtab_table_size: u64) -> Vec<u8> {
+    let sh = SectionHeader {
+        name: 25, // address of the .strtab text 
+        bits: 3,
+        flags: 0,
+        addr: 0,
+        offset: strtab_offset,
+        size: strtab_table_size,
+        link: 0,
+        info: 0,
+        addralign: 0,
+        entsize: 0,
+    };
+
+    let res = encode(&sh);
+    res
+}
+
+pub fn assemble_string_table() -> Vec<u8> {
+    b"\x00.text\x00.shstrtab\x00.symtab\x00.strtab\x00".to_vec()
+}
+
+pub fn assemble_symtab_table(entry_point_offset: u64, avg_offset: u64, quad_offset: u64) -> Vec<u8> {
+    let mut vec = Vec::new();
+    //NULL entry
+    vec.append(&mut encode(SymabEntry {
+        name: 0,
+        info: 0,
+        other: 0,
+        shndx: 0,
+        value: 0,
+        size: 0,
+    }));
+    // entry point entry
+    vec.append(&mut encode(SymabEntry {
+        name: 1, // address of entry name
+        info: 0x10,
+        other: 0,
+        shndx: 1,
+        value: FILE_LOAD_VA + entry_point_offset,
+        size: 0,
+    }));
+    // avg entry
+    vec.append(&mut encode(SymabEntry {
+        name: 0x0d, // address of entry name
+        info: 0,
+        other: 0,
+        shndx: 1,
+        value: FILE_LOAD_VA + avg_offset,
+        size: 0,
+    }));
+    // quad entry
+    vec.append(&mut encode(SymabEntry {
+        name: 0x11, // address of entry name
+        info: 0,
+        other: 0,
+        shndx: 1,
+        value: FILE_LOAD_VA + quad_offset,
+        size: 0,
+    }));
+    vec
+}
+
+pub fn assemble_strtab_table() -> Vec<u8> {
+    b"\x00entry_point\x00avg\x00quad\x00".to_vec()
 }
 
 pub fn entry_point_code(message_buffer_offset: u64) -> Vec<u8> {
     let mut message_buffer_address = message_buffer_offset.to_le_bytes().to_vec();
-    // let mut ep = b"\xb8\x01\x00\x00\x00\
-    //             \xbf\x01\x00\x00\x00\
-    //             \x48\xbe\xa0\x81\x02\x00\x00\x00\x00\x00\
-    //             \xba\x0e\x00\x00\x00\
-    //             \x0f\x05\
-    //             \xb8\x3c\x00\x00\x00\
-    //             \xbf\x00\x00\x00\x00\
-    //             \x0f\x05\
-    //             ";
     let mut vec = Vec::new();
     vec.append(&mut b"\xb8\x01\x00\x00\x00\
                     \xbf\x01\x00\x00\x00\
@@ -313,29 +393,9 @@ fn equation_to_code(eq: &Equation) -> Vec<u8> {
 
     res.append(&mut combine(&eq.tree, &eq.arguments));
 
+    res.append(&mut b"\x5d".to_vec());
     res.append(&mut b"\xc3".to_vec());
     // println!("{:?}", res);
 
     res
-
-    // let avg = b"\x55\
-    //             \x48\x89\xe5\
-    //             \x48\x8b\x45\x18\
-    //             \x48\x8b\x4d\x10\
-    //             \x48\x01\xc8\
-    //             \x50\
-    //             \x48\x8b\x04\x24\
-    //             \xb9\x02\x00\x00\x00\
-    //             \x48\xf7\xf1\
-    //             \x5a\
-    //             \x88\x04\x25\x33\x82\x02\x00\
-    //             \xb8\x01\x00\x00\x00\
-    //             \xbf\x01\x00\x00\x00\
-    //             \x48\xbe\x33\x82\x02\x00\x00\x00\x00\x00\
-    //             \xba\x10\x00\x00\x00\
-    //             \x0f\x05\
-    //             \x5d\
-    //             \xc3\
-    //             ";
-    // avg.to_vec()    
 }

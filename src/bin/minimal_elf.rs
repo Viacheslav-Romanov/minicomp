@@ -65,13 +65,37 @@ pub struct SectionsHeader {
 }
 
 #[derive(Serialize, Debug)]
-pub struct StringTable {
-    pub empty_string: u8,
-    pub text_section_name: [u8;6],
-    pub string_table_name: [u8;10],
+pub struct SectionHeader {
+    pub name: u32,
+    pub bits: u32,
+    pub flags: u64,
+    pub addr: u64,
+    pub offset: u64,
+    pub size: u64,
+    pub link: u32,
+    pub info: u32,
+    pub addralign: u64,
+    pub entsize: u64,  
 }
 
-pub fn encode<T: serde::Serialize>(elf: T) -> Vec<u8> {
-    let encoded: Vec<u8> = bincode::serialize(&elf).unwrap();
+#[derive(Serialize, Debug)]
+pub struct SymabEntry {
+	pub	name: u32,
+	pub info: u8,
+	pub other: u8,
+	pub shndx: u16,
+	pub value: u64,
+	pub size: u64,   
+}
+
+// #[derive(Serialize, Debug)]
+// pub struct StringTable {
+//     pub empty_string: u8,
+//     pub text_section_name: [u8;6],
+//     pub string_table_name: [u8;10],
+// }
+
+pub fn encode<T: serde::Serialize>(data: T) -> Vec<u8> {
+    let encoded: Vec<u8> = bincode::serialize(&data).unwrap();
     encoded
 }
