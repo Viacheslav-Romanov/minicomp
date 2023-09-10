@@ -24,7 +24,7 @@ jobs:
         chmod +x miniout.elf
         ./miniout.elf
         objdump -M intel -d miniout.elf
-        ls -la miniout.elf | grep 764
+        ls -la miniout.elf | grep 764 # check the file size
         ./miniout.elf | grep -a "Z <- result"
         ./miniout.elf | grep -a "D <- result"
       
