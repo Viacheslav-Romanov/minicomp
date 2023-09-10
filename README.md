@@ -43,7 +43,7 @@ Disassembly of section .text:
 
 ## Build instructions
 
-If you want to build the binary with a debug information include use the following command in the root folder.
+If you want to build the binary with a debug information included use the following command in the root folder.
 
 `cargo build`
 
