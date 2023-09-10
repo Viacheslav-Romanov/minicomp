@@ -17,11 +17,12 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Build
-      run: cargo build
+      run: cargo build --release
     - name: Run tests
       run: |
-        ./target/debug/minicomp miniout.elf "avg(x, y) = (x + y)/2; quad(x, a, b, c) = a*x*x + b*x + c"
+        ./target/release/minicomp miniout.elf "avg(x, y) = (x + y)/2; quad(x, a, b, c) = a*x*x + b*x + c"
         chmod +x miniout.elf
         ./miniout.elf
         objdump -M intel -d miniout.elf
+        ls -la miniout.elf | grep 764
       

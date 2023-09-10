@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-// Virtual address where the file is going to be loaded into
+// Virtual address where the file is going to be loaded into. Keep it page-aligned.
 pub const FILE_LOAD_VA: u64 = 4096 * 40;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -39,32 +39,6 @@ pub struct ProgramHeader {
 }
 
 #[derive(Serialize, Debug)]
-pub struct SectionsHeader {
-    pub null_section_header_1: [u8;32],
-    pub null_section_header_2: [u8;32],
-    pub offset_of_text: u32,
-    pub loadable_bits: u32,
-    pub flags: u64,
-    pub virtual_address: u64,
-    pub offset_in_file: u64,
-    pub size_of_section: u64,
-    pub linked_section_index: u32,
-    pub info: u32,
-    pub aligment: u64,
-    pub entry_size: u64,
-    pub string_table: u32,
-    pub string_table_index: u32,
-    pub loadable: u64,
-    pub string_table_address: u64,
-    pub string_table_offset: u64,
-    pub string_table_size: u64,
-    pub reserved1: u32,
-    pub reserved2: u32,
-    pub reserved3: u64,
-    pub reserved4: u64,
-}
-
-#[derive(Serialize, Debug)]
 pub struct SectionHeader {
     pub name: u32,
     pub bits: u32,
@@ -79,7 +53,7 @@ pub struct SectionHeader {
 }
 
 #[derive(Serialize, Debug)]
-pub struct SymabEntry {
+pub struct SymtabEntry {
 	pub	name: u32,
 	pub info: u8,
 	pub other: u8,
@@ -87,13 +61,6 @@ pub struct SymabEntry {
 	pub value: u64,
 	pub size: u64,   
 }
-
-// #[derive(Serialize, Debug)]
-// pub struct StringTable {
-//     pub empty_string: u8,
-//     pub text_section_name: [u8;6],
-//     pub string_table_name: [u8;10],
-// }
 
 pub fn encode<T: serde::Serialize>(data: T) -> Vec<u8> {
     let encoded: Vec<u8> = bincode::serialize(&data).unwrap();

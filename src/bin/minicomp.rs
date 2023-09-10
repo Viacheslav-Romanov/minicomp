@@ -22,7 +22,6 @@ fn main() {
     }
 
     let equations = business_logic::parse_input_formula(&args[2]);
-    println!("{:?}", equations);
 
     let machine_code = assemble(&equations);
 

@@ -190,29 +190,3 @@ fn matching(c: char) -> char {
         _ => panic!("should have been a parenthesis!"),
     }
 }
-
-pub fn print(tree: &ParseNode) -> String {
-    match tree.entry {
-        GrammarItem::Paren => {
-            format!("({})",
-                    print(tree.children.get(0).expect("parens need one child")))
-        }
-        GrammarItem::Sum => {
-            let lhs = print(tree.children.get(0).expect("sums need two children"));
-            let rhs = print(tree.children.get(1).expect("sums need two children"));
-            format!("{} + {}", lhs, rhs)
-        }
-        GrammarItem::Product => {
-            let lhs = print(tree.children.get(0).expect("products need two children"));
-            let rhs = print(tree.children.get(1).expect("products need two children"));
-            format!("{} * {}", lhs, rhs)
-        }
-        GrammarItem::Div => {
-            let lhs = print(tree.children.get(0).expect("divider need two children"));
-            let rhs = print(tree.children.get(1).expect("divider need two children"));
-            format!("{} / {}", lhs, rhs)
-        }    
-        GrammarItem::Number(n) => format!("{}", n),
-        GrammarItem::Arg(n) => format!("{}", n),
-    }
-}

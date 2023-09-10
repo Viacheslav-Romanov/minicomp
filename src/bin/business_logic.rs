@@ -3,18 +3,27 @@ use crate::minimal_elf::*;
 
 #[derive(Debug)]
 pub struct Equation {
-    function_name: String,
     tree: ParseNode,
     arguments: Vec<char>,
 }
 
-pub fn generate_code_section(equations: &Vec<Equation>) -> Vec<u8> {
-    let mut res = Vec::new();
-    for eq in equations {
-        res.append(&mut equation_to_code(eq));
+pub fn parse_input_formula(input: &String) -> Vec<Equation> {
+    let mut equations = Vec::new();
+
+    for formula in input.split(";") {
+        let arr = formula.trim().split("=").collect::<Vec<_>>();
+        let start_pos = arr[0].find('(').unwrap();
+        let end_pos = arr[0].find(')').unwrap();
+        let arguments = &arr[0][start_pos + 1..end_pos]
+                                                    .split(',').map(|c| c.trim().chars().next().unwrap())
+                                                    .collect::<Vec<char>>();
+        let equation = arr[1];
+        let f = parse(&equation.to_owned());
+        let tree = &f.unwrap();
+        equations.push(Equation {tree: tree.clone(), arguments: arguments.clone()});
     }
-    
-    res
+
+    equations
 }
 
 pub fn assemble_binary(equations: &Vec<Equation>) -> Vec<u8> {
@@ -22,7 +31,9 @@ pub fn assemble_binary(equations: &Vec<Equation>) -> Vec<u8> {
 
     assembly.append(&mut assemble_elf_header(0x138));
     assembly.append(&mut assemble_program_header(0x179));
-    assembly.append(&mut assemble_section_header(0x188, 0x179, 0));
+    assembly.append(&mut assemble_null_section_header());
+    assembly.append(&mut assemble_text_section_header(0x188));
+    assembly.append(&mut assemble_string_table_section_header(0x179, 0));
     assembly.append(&mut assemble_symtab_section_header(0, 0));
     assembly.append(&mut assemble_strtab_section_header(0, 0));
     assembly.append(&mut generate_code_section(&equations));
@@ -54,7 +65,9 @@ pub fn assemble_binary(equations: &Vec<Equation>) -> Vec<u8> {
     // need a second pass here to update the binary with calculated values
     assembly.append(&mut assemble_elf_header(entry_point_offset));
     assembly.append(&mut assemble_program_header(string_table_offset));
-    assembly.append(&mut assemble_section_header(file_size, string_table_offset, symtab_table_offset - string_table_offset));
+    assembly.append(&mut assemble_null_section_header());
+    assembly.append(&mut assemble_text_section_header(file_size));
+    assembly.append(&mut assemble_string_table_section_header(string_table_offset, symtab_table_offset - string_table_offset));
     assembly.append(&mut assemble_symtab_section_header(symtab_table_offset, strtab_table_offset - symtab_table_offset));
     assembly.append(&mut assemble_strtab_section_header(strtab_table_offset, file_size - strtab_table_offset));
     assembly.append(&mut generate_code_section(&equations));
@@ -77,9 +90,9 @@ pub fn assemble_elf_header(entry_point_offset: u64) -> Vec<u8> {
         elf_file_type: 2,
         target_architecture: 0x3e,
         additional_elf_version: 1,        
-        entry_point: FILE_LOAD_VA + entry_point_offset, // calculate entry_point + file_load_va
-        program_header_offset: 0x40, // calculate program_headers_start
-        section_header_offset: 0x78, // calculate section_headers_start
+        entry_point: FILE_LOAD_VA + entry_point_offset, 
+        program_header_offset: 0x40, 
+        section_header_offset: 0x78,
         flags: 0,
         size_of_elf_header: 64,
         size_of_program_header_entry: 0x38,
@@ -98,10 +111,10 @@ pub fn assemble_program_header(segment_size: u64) -> Vec<u8> {
         program_header_type: 1,
         program_header_flags: 7,
         loadable_segment_offset: 0,
-        virtual_address: FILE_LOAD_VA, //calculate
-        physical_address: FILE_LOAD_VA, //calculate
-        segment_size_in_file: segment_size, //calculate?
-        segment_size_in_memory: segment_size, //calculate?
+        virtual_address: FILE_LOAD_VA,
+        physical_address: FILE_LOAD_VA,
+        segment_size_in_file: segment_size,
+        segment_size_in_memory: segment_size,
         segment_aligment: 0x200000,
     };
 
@@ -109,30 +122,41 @@ pub fn assemble_program_header(segment_size: u64) -> Vec<u8> {
     res
 }
 
-pub fn assemble_section_header(file_size: u64, string_table_offset: u64, string_table_size: u64) -> Vec<u8> {
-    let sh = SectionsHeader {
-        null_section_header_1: "\x00".repeat(32).as_bytes().try_into().unwrap(),
-        null_section_header_2: "\x00".repeat(32).as_bytes().try_into().unwrap(),
-        offset_of_text: 1, //calculate text_section_name - string_table
-        loadable_bits: 1,
+
+pub fn assemble_null_section_header() -> Vec<u8> {
+    "\x00".repeat(64).as_bytes().to_vec()
+}
+
+pub fn assemble_text_section_header(file_size: u64) -> Vec<u8> {
+    let sh = SectionHeader {
+        name: 1,
+        bits: 1,
         flags: 7,
-        virtual_address: FILE_LOAD_VA, //calculate file_load_va
-        offset_in_file: 0,
-        size_of_section: file_size, //calculate file_end
-        linked_section_index: 0,
+        addr: FILE_LOAD_VA,
+        offset: 0,
+        size: file_size,
+        link: 0,
         info: 0,
-        aligment: 0,
-        entry_size: 0,
-        string_table: 7, //calculate string_table_name - string_table
-        string_table_index: 3,
-        loadable: 0,
-        string_table_address: FILE_LOAD_VA + string_table_offset, //calculate file_load_va + string_table
-        string_table_offset: string_table_offset, //calculate string_table
-        string_table_size: string_table_size, //calculate string_table_end - string_table
-        reserved1: 0,
-        reserved2: 0,
-        reserved3: 1,
-        reserved4: 0,
+        addralign: 0,
+        entsize: 0,
+    };
+
+    let res = encode(&sh);
+    res
+}
+
+pub fn assemble_string_table_section_header(string_table_offset: u64, string_table_size: u64) -> Vec<u8> {
+    let sh = SectionHeader {
+        name: 7,
+        bits: 3,
+        flags: 0,
+        addr: FILE_LOAD_VA + string_table_offset,
+        offset: string_table_offset,
+        size: string_table_size,
+        link: 0,
+        info: 0,
+        addralign: 0,
+        entsize: 0,
     };
 
     let res = encode(&sh);
@@ -182,7 +206,7 @@ pub fn assemble_string_table() -> Vec<u8> {
 pub fn assemble_symtab_table(entry_point_offset: u64, avg_offset: u64, quad_offset: u64) -> Vec<u8> {
     let mut vec = Vec::new();
     //NULL entry
-    vec.append(&mut encode(SymabEntry {
+    vec.append(&mut encode(SymtabEntry {
         name: 0,
         info: 0,
         other: 0,
@@ -191,7 +215,7 @@ pub fn assemble_symtab_table(entry_point_offset: u64, avg_offset: u64, quad_offs
         size: 0,
     }));
     // entry point entry
-    vec.append(&mut encode(SymabEntry {
+    vec.append(&mut encode(SymtabEntry {
         name: 1, // address of entry name
         info: 0x10,
         other: 0,
@@ -200,7 +224,7 @@ pub fn assemble_symtab_table(entry_point_offset: u64, avg_offset: u64, quad_offs
         size: 0,
     }));
     // avg entry
-    vec.append(&mut encode(SymabEntry {
+    vec.append(&mut encode(SymtabEntry {
         name: 0x0d, // address of entry name
         info: 0,
         other: 0,
@@ -209,7 +233,7 @@ pub fn assemble_symtab_table(entry_point_offset: u64, avg_offset: u64, quad_offs
         size: 0,
     }));
     // quad entry
-    vec.append(&mut encode(SymabEntry {
+    vec.append(&mut encode(SymtabEntry {
         name: 0x11, // address of entry name
         info: 0,
         other: 0,
@@ -273,36 +297,16 @@ pub fn message_buffer() -> Vec<u8> {
     message.to_vec()
 }
 
-pub fn parse_input_formula(input: &String) -> Vec<Equation> {
-    let mut equations = Vec::new();
-
-    for formula in input.split(";") {
-        let arr = formula.trim().split("=").collect::<Vec<_>>();
-        let function_name = arr[0].chars()
-                                .take_while(|&ch| ch != '(')
-                                .collect::<String>();
-        let start_pos = arr[0].find('(').unwrap();
-        let end_pos = arr[0].find(')').unwrap();
-        let arguments = &arr[0][start_pos + 1..end_pos]
-                                                    .split(',').map(|c| c.trim().chars().next().unwrap())
-                                                    .collect::<Vec<char>>();
-        let equation = arr[1];
-        let f = parse(&equation.to_owned());
-        // println!("{}", formula_parser::print(&f.unwrap()));
-        let tree = &f.unwrap();
-        equations.push(Equation {function_name: function_name, tree: tree.clone(), arguments: arguments.clone()});
-        // println!("{:?}", tree);
-    }
-
-    equations
-}
-
 fn get_arguments(tree: &ParseNode) -> (&GrammarItem, &GrammarItem) {
     let lhs_type = &tree.children.get(0).unwrap().entry;
     let rhs_type = &tree.children.get(1).unwrap().entry;
     (lhs_type, rhs_type)
 }
 
+// set the registers for arguments accordingly
+// rax = right hand side argument
+// rcx = left hand side
+// rcx is a default register to set an argument if operator has only one argument
 fn set_arguments_to_different_regs(tree: &ParseNode, rhs: &Vec<u8>, lhs: &Vec<u8>) -> (Vec<u8>, Vec<u8>) {
     let res = match get_arguments(&tree) {
         (GrammarItem::Arg(_), GrammarItem::Arg(_)) => {
@@ -316,15 +320,15 @@ fn set_arguments_to_different_regs(tree: &ParseNode, rhs: &Vec<u8>, lhs: &Vec<u8
         },
         (_, GrammarItem::Arg(_)) => {
             let mut r = Vec::new();
-            r.append(&mut b"\x48\x8b\x45".to_vec());
+            r.append(&mut b"\x48\x8b\x4d".to_vec());
             r.append(&mut rhs.clone());
-            (lhs.clone(), r)
+            (r, lhs.clone())
         },
         (GrammarItem::Arg(_), _) => {
             let mut l = Vec::new();
-            l.append(&mut b"\x48\x8b\x45".to_vec());
+            l.append(&mut b"\x48\x8b\x4d".to_vec());
             l.append(&mut lhs.clone());
-            (l, rhs.clone())
+            (rhs.clone(), l)
         },
         _ => (rhs.clone(), lhs.clone())
     };
@@ -344,19 +348,14 @@ fn combine(tree: &ParseNode, args: &Vec<char>) -> Vec<u8> {
                 | (GrammarItem::Arg(_) | GrammarItem::Number(_) , _)  => false,
                 _ => true
             };
-            // println!("Product_Type: lhs_type={:#04x?} rhs_type={:#04x?}", lhs_type, rhs_type);
             let mut v = Vec::new();
-            if rhs[..3] == lhs[..3] {
-                rhs[2] = 0x45; //change register to rcx
-            }
-            // (rhs, lhs) = set_arguments_to_different_regs(tree, &rhs, &lhs);
+            (rhs, lhs) = set_arguments_to_different_regs(tree, &rhs, &lhs);
             v.append(&mut lhs);
             v.append(&mut rhs);
             if both_sides_operators {
                 v.append(&mut b"\x59".to_vec());
             }
             v.append(&mut b"\x48\x01\xc8".to_vec());
-            // v.append(&mut b"\x50".to_vec());
             v
         }
         GrammarItem::Product => {
@@ -366,16 +365,10 @@ fn combine(tree: &ParseNode, args: &Vec<char>) -> Vec<u8> {
                 (GrammarItem::Arg(_) | GrammarItem::Number(_), GrammarItem::Arg(_) | GrammarItem::Number(_)) => false,
                 _ => true
             };
-            // println!("Product_Type: lhs_type={:#04x?} rhs_type={:#04x?}", lhs_type, rhs_type);
             let mut v = Vec::new();
-            // (rhs, lhs) = set_arguments_to_different_regs(tree, &rhs, &lhs);
-            if rhs[..3] == lhs[..3] {
-                rhs[2] = 0x45;
-            }
-            // println!("Product: lhs={:#04x?} rhs={:#04x?}", lhs, rhs);
+            (rhs, lhs) = set_arguments_to_different_regs(tree, &rhs, &lhs);
             v.append(&mut rhs);
             v.append(&mut lhs);
-            // v.append(&mut b"\x48\x8b\x04\x24".to_vec()); //if
             v.append(&mut b"\x48\xf7\xe1".to_vec());
             if one_side_operator {
                 v.append(&mut b"\x50".to_vec()); //if
@@ -386,10 +379,7 @@ fn combine(tree: &ParseNode, args: &Vec<char>) -> Vec<u8> {
             let mut lhs = combine(tree.children.get(0).expect("divider need two children"), args);
             let mut rhs = combine(tree.children.get(1).expect("divider need two children"), args);
             let mut v = Vec::new();
-            if rhs[..3] == lhs[..3] {
-                rhs[2] = 0x45;
-            }
-            // (rhs, lhs) = set_arguments_to_different_regs(tree, &rhs, &lhs);
+            (rhs, lhs) = set_arguments_to_different_regs(tree, &rhs, &lhs);
             v.append(&mut lhs);
             v.append(&mut rhs);
             v.append(&mut b"\x48\xf7\xf1".to_vec());
@@ -404,10 +394,7 @@ fn combine(tree: &ParseNode, args: &Vec<char>) -> Vec<u8> {
             let offset = (args.iter()
                                     .position(|&x| x == n)
                                     .unwrap())*8 + 0x10;
-            let mut v = b"\x48\x8b\x4d".to_vec();
-            v.append(&mut [offset as u8].to_vec()); 
-            v
-            // [offset as u8].to_vec()
+            [offset as u8].to_vec()
         },
     }
 }
@@ -422,7 +409,15 @@ fn equation_to_code(eq: &Equation) -> Vec<u8> {
 
     res.append(&mut b"\x5d".to_vec());
     res.append(&mut b"\xc3".to_vec());
-    // println!("{:?}", res);
 
+    res
+}
+
+pub fn generate_code_section(equations: &Vec<Equation>) -> Vec<u8> {
+    let mut res = Vec::new();
+    for eq in equations {
+        res.append(&mut equation_to_code(eq));
+    }
+    
     res
 }
