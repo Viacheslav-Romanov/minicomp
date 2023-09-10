@@ -24,4 +24,6 @@ jobs:
         chmod +x miniout.elf
         ./miniout.elf
         objdump -M intel -d miniout.elf
+        ./miniout.elf | grep -a "Z <- result"
+        ./miniout.elf | grep -a "D <- result"
       
