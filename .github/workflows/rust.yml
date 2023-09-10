@@ -25,4 +25,6 @@ jobs:
         ./miniout.elf
         objdump -M intel -d miniout.elf
         ls -la miniout.elf | grep 764
+        ./miniout.elf | grep -a "Z <- result"
+        ./miniout.elf | grep -a "D <- result"
       
