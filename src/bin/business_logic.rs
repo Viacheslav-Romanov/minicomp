@@ -226,15 +226,42 @@ pub fn assemble_strtab_table() -> Vec<u8> {
 
 pub fn entry_point_code(message_buffer_offset: u64) -> Vec<u8> {
     let mut message_buffer_address = message_buffer_offset.to_le_bytes().to_vec();
+    let mut message_buffer_address_u32 = (message_buffer_offset as u32).to_le_bytes().to_vec();
     let mut vec = Vec::new();
+    // call the functions here and print the results
+    // avg(x,y) = (100 + 80) / 2 = 90 results in Z ASCII character
+    // quad(x, a, b, c) = (2*2*1 + 30*2 + 4) = 68 results in D ASCII character
+    // execute ./miniout.elf in the console
+    // Print results will look as follows:
+    // Z <- result  
+    // D <- result
+    vec.append(&mut b"\x6a\x64\
+                    \x6a\x50\
+                    \xe8\xaf\xff\xff\xff\
+                    \x88\x04\x25\
+                    ".to_vec());
+    vec.append(&mut message_buffer_address_u32);
     vec.append(&mut b"\xb8\x01\x00\x00\x00\
                     \xbf\x01\x00\x00\x00\
                     \x48\xbe\
-                ".to_vec());
+                    ".to_vec());
     vec.append(&mut message_buffer_address);
     vec.append(&mut b"\xba\x0e\x00\x00\x00\
                 \x0f\x05\
-                \xb8\x3c\x00\x00\x00\
+                ".to_vec());
+    vec.append(&mut b"\x6a\x04\
+                    \x6a\x1e\
+                    \x6a\x01\
+                    \x6a\x02\
+                    \xe8\x99\xff\xff\xff\
+                    \x88\x04\x25\
+                    ".to_vec());
+    vec.append(&mut (message_buffer_offset as u32).to_le_bytes().to_vec());
+    vec.append(&mut b"\xb8\x01\x00\x00\x00\
+                    \xba\x0e\x00\x00\x00\
+                    \x0f\x05\
+                    ".to_vec());
+    vec.append(&mut b"\xb8\x3c\x00\x00\x00\
                 \xbf\x00\x00\x00\x00\
                 \x0f\x05\
                 ".to_vec());
@@ -242,7 +269,7 @@ pub fn entry_point_code(message_buffer_offset: u64) -> Vec<u8> {
 }
 
 pub fn message_buffer() -> Vec<u8> {
-    let message = b"\x48\x65\x6c\x6c\x6f\x2c\x20\x77\x6f\x72\x6c\x64\x0a\x00";
+    let message = b"\x48\x20\x3c\x2d\x20\x72\x65\x73\x75\x6c\x74\x20\x0a\x00";
     message.to_vec()
 }
 
